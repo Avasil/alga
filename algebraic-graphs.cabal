@@ -71,6 +71,7 @@ library
                         Algebra.Graph.AdjacencyIntMap,
                         Algebra.Graph.AdjacencyIntMap.Algorithm,
                         Algebra.Graph.AdjacencyMap,
+                        Algebra.Graph.AdjacencyMapPoc,
                         Algebra.Graph.AdjacencyMap.Algorithm,
                         Algebra.Graph.Bipartite.AdjacencyMap,
                         Algebra.Graph.Class,
