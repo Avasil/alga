@@ -158,14 +158,20 @@ x + y <= x * y@
 
 data AdjacencyMapPoc a = AM
     { graph :: AIM.AdjacencyIntMap
-    , value :: Int -> Maybe a
-    , index :: a -> Maybe Int } deriving (Generic)
+    , valueMap :: IntMap a
+    , indexMap :: Map a Int } deriving (Generic)
+
+value :: AdjacencyMapPoc a -> Int -> Maybe a
+value g i = IntMap.lookup i (valueMap g)
+
+index :: Ord a => AdjacencyMapPoc a -> a -> Maybe Int
+index g a = Map.lookup a (indexMap g)
 
 instance Eq (AdjacencyMapPoc a) where
-    (==) x y = (==) (graph x) (graph y) -- needs to compare functions :/ convert smaller ?
+    (==) x y = (==) (graph x) (graph y) -- todo: needs to convert mappings
 
 instance Ord (AdjacencyMapPoc a) where
-    compare x y = compare (graph x) (graph y) -- needs to compare functions :/
+    compare x y = compare (graph x) (graph y) -- todo: needs to convert mappings
 
 -- instance (Ord a, Show a) => Show (AdjacencyMapPoc a) where
 --     showsPrec p am@(AdjacencyMapPoc g _ _)
@@ -208,7 +214,7 @@ instance NFData a => NFData (AdjacencyMapPoc a) where
 -- -- 'edgeCount'   empty == 0
 -- -- @
 empty :: AdjacencyMapPoc a
-empty = AM AIM.empty (const Nothing) (const Nothing)
+empty = AM AIM.empty IntMap.empty Map.empty
 {-# NOINLINE [1] empty #-}
 
 -- -- | Construct the graph comprising /a single isolated vertex/.
@@ -220,12 +226,11 @@ empty = AM AIM.empty (const Nothing) (const Nothing)
 -- -- 'vertexCount' (vertex x) == 1
 -- -- 'edgeCount'   (vertex x) == 0
 -- -- @
-vertex :: Eq a => a -> AdjacencyMapPoc a
+vertex :: a -> AdjacencyMapPoc a
 vertex a = AM (AIM.vertex 0) newValue newIndex
     where 
-        newValue 0 = Just a
-        newValue _ = Nothing
-        newIndex v = if v == a then Just 0 else Nothing
+        newValue = IntMap.singleton 0 a
+        newIndex = Map.singleton a 0
 {-# NOINLINE [1] vertex #-}
 
 -- -- | Construct the graph comprising /a single edge/.
@@ -242,16 +247,10 @@ edge :: Ord a => a -> a -> AdjacencyMapPoc a
 edge x y | x == y    = AM  (AIM.edge 0 0) newValue newIndex
          | otherwise = AM  (AIM.edge 0 1) newValue' newIndex'
     where 
-        newValue 0 = Just x
-        newValue _ = Nothing
-        newIndex v = if v == x then Just 0 else Nothing
-        newValue' 0 = Just x
-        newValue' 1 = Just y
-        newValue' _ = Nothing
-        newIndex' v 
-            | v == x = Just 0
-            | v == y = Just 1
-            | otherwise = Nothing
+        newValue  = IntMap.singleton 0 x
+        newIndex  = Map.singleton x 0
+        newValue' = IntMap.fromDistinctAscList [(0, x), (1, y)]
+        newIndex' = Map.fromList [(x, 0), (y, 1)]
 
 -- | /Overlay/ two graphs. This is a commutative, associative and idempotent
 -- operation with the identity 'empty'.
@@ -268,19 +267,25 @@ edge x y | x == y    = AM  (AIM.edge 0 0) newValue newIndex
 -- 'edgeCount'   (overlay 1 2) == 0
 -- @
 overlay :: Ord a => AdjacencyMapPoc a -> AdjacencyMapPoc a -> AdjacencyMapPoc a
-overlay x y = AM (AIM.overlay (graph x) newGraph) newValue newIndex
+overlay g1 g2 = AM (AIM.overlay (graph g1) newGraph) newValue newIndex
     where 
-        f nodes (val :: Int -> Maybe a) n = 
-            foldr (\v (valuePairs :: IntMap a, indexPairs :: Map a Int) -> (
-                Maybe.maybe valuePairs (\a -> IntMap.insert (n + v) a valuePairs) (val v), -- check if n already exists and number differently
-                Maybe.maybe indexPairs (\a -> Map.insert a (n + v) indexPairs) (val v)))
-                (IntMap.empty, Map.empty)
+        f nodes n = 
+            foldr (\(v :: Int) (valuePairs :: IntMap a, indexPairs :: Map a Int, n) -> 
+                let maybeA = IntMap.lookup v valuePairs
+                    (newN, newValuePairs, newIndexPairs) = Maybe.fromMaybe 
+                        (Maybe.maybe (n, valuePairs, indexPairs) (\a -> (n + 1, IntMap.insert n a valuePairs, Map.insert a n indexPairs)) (value g2 v))
+                        (maybeA >>= (\newA -> fmap (\oldA -> 
+                            if newA == oldA
+                                then (n, valuePairs, indexPairs) 
+                                else (n + 1, IntMap.insert n oldA valuePairs, Map.insert oldA n indexPairs))
+                            (value g2 v)))
+                in (newValuePairs, newIndexPairs, newN))
+                (valueMap g1, indexMap g1, n)
                 nodes
-        n = AIM.vertexCount (graph x)
-        (newValuePairs, newIndexPairs) = f (AIM.vertexList (graph y)) (value y) n
-        newValue v = Maybe.maybe (IntMap.lookup v newValuePairs) Just (value x v)
-        newIndex v = Maybe.maybe (Map.lookup v newIndexPairs) Just (index x v)
-        newGraph = AIM.gmap (+ n) (graph x)
+        n = AIM.vertexCount (graph g1)
+        (newValue, newIndex, _) = f (AIM.vertexList (graph g2)) n
+        newGraph = AIM.gmap (\v -> Maybe.fromMaybe v (value g2 v >>= (`Map.lookup` newIndex))) (graph g2)
+{-# NOINLINE [1] overlay #-}
 
 -- -- | /Connect/ two graphs. This is an associative operation with the identity
 -- -- 'empty', which distributes over 'overlay' and obeys the decomposition axiom.
@@ -301,19 +306,24 @@ overlay x y = AM (AIM.overlay (graph x) newGraph) newValue newIndex
 -- -- 'edgeCount'   (connect 1 2) == 1
 -- -- @
 connect :: Ord a => AdjacencyMapPoc a -> AdjacencyMapPoc a -> AdjacencyMapPoc a
-connect x y = AM (AIM.connect (graph x) newGraph) newValue newIndex
+connect g1 g2 = AM (AIM.connect (graph g1) newGraph) newValue newIndex
     where 
-        f nodes (val :: Int -> Maybe a) n = 
-            foldr (\v (valuePairs :: IntMap a, indexPairs :: Map a Int) -> (
-                Maybe.maybe valuePairs (\a -> IntMap.insert (n + v) a valuePairs) (val v), 
-                Maybe.maybe indexPairs (\a -> Map.insert a (n + v) indexPairs) (val v)))
-                (IntMap.empty, Map.empty)
+        f nodes n = 
+            foldr (\(v :: Int) (valuePairs :: IntMap a, indexPairs :: Map a Int, n) -> 
+                let maybeA = IntMap.lookup v valuePairs
+                    (newN, newValuePairs, newIndexPairs) = Maybe.fromMaybe 
+                        (Maybe.maybe (n, valuePairs, indexPairs) (\a -> (n + 1, IntMap.insert n a valuePairs, Map.insert a n indexPairs)) (value g2 v))
+                        (maybeA >>= (\newA -> fmap (\oldA -> 
+                            if newA == oldA
+                                then (n, valuePairs, indexPairs) 
+                                else (n + 1, IntMap.insert n oldA valuePairs, Map.insert oldA n indexPairs))
+                            (value g2 v)))
+                in (newValuePairs, newIndexPairs, newN))
+                (valueMap g1, indexMap g1, n)
                 nodes
-        n = AIM.vertexCount (graph x)
-        (newValuePairs, newIndexPairs) = f (AIM.vertexList (graph y)) (value y) n
-        newValue v = Maybe.maybe (IntMap.lookup v newValuePairs) Just (value x v)
-        newIndex v = Maybe.maybe (Map.lookup v newIndexPairs) Just (index x v)
-        newGraph = AIM.gmap (+ n) (graph x)
+        n = AIM.vertexCount (graph g1)
+        (newValue, newIndex, _) = f (AIM.vertexList (graph g2)) n
+        newGraph = AIM.gmap (\v -> Maybe.fromMaybe v (value g2 v >>= (`Map.lookup` newIndex))) (graph g2)
 {-# NOINLINE [1] connect #-}
 
 -- -- -- | Construct the graph comprising a given list of isolated vertices.
@@ -341,7 +351,7 @@ connect x y = AM (AIM.connect (graph x) newGraph) newValue newIndex
 -- -- -- 'edgeList' . edges  == 'Data.List.nub' . 'Data.List.sort'
 -- -- -- @
 edges :: Ord a => [(a, a)] -> AdjacencyMapPoc a
-edges es = AM (AIM.edges newEdges) (`IntMap.lookup` newValue) (`Map.lookup` newIndex)
+edges es = AM (AIM.edges newEdges) newValue newIndex
     where 
         (newEdges, newValue, newIndex, _) = foldr (\(from, to) (newEdges, valueMap, indexMap, n) -> 
             finalResult from to valueMap indexMap n newEdges) 
@@ -426,7 +436,7 @@ isEmpty x = AIM.isEmpty (graph x)
 -- -- -- hasVertex 1 ('vertex' 2)       == False
 -- -- -- hasVertex x . 'removeVertex' x == 'const' False
 -- -- -- @
-hasVertex :: a -> AdjacencyMapPoc a -> Bool
+hasVertex :: Ord a => a -> AdjacencyMapPoc a -> Bool
 hasVertex a g = Maybe.isJust (index g a)
 
 -- -- -- | Check if a graph contains a given edge.
@@ -439,8 +449,8 @@ hasVertex a g = Maybe.isJust (index g a)
 -- -- -- hasEdge x y . 'removeEdge' x y == 'const' False
 -- -- -- hasEdge x y                  == 'elem' (x,y) . 'edgeList'
 -- -- -- @
-hasEdge :: a -> a -> AdjacencyMapPoc a -> Bool
-hasEdge u v (AM g _ idx) = Maybe.isJust $ idx u >>= (\a -> fmap (\b -> AIM.hasEdge a b g) (idx v))
+hasEdge :: Ord a => a -> a -> AdjacencyMapPoc a -> Bool
+hasEdge u v g@(AM aim _ _) = Maybe.isJust $ index g u >>= (\a -> fmap (\b -> AIM.hasEdge a b aim) (index g v))
 
 -- -- -- | The number of vertices in a graph.
 -- -- -- Complexity: /O(1)/ time.
@@ -475,7 +485,7 @@ edgeCount = AIM.edgeCount . graph
 -- -- vertexList . 'vertices' == 'Data.List.nub' . 'Data.List.sort'
 -- -- @
 vertexList :: AdjacencyMapPoc a -> [a]
-vertexList (AM g val _) = Maybe.mapMaybe val (AIM.vertexList g)
+vertexList g@(AM aim _ _) = Maybe.mapMaybe (value g) (AIM.vertexList aim)
 
 -- -- -- | The sorted list of edges of a graph.
 -- -- -- Complexity: /O(n + m)/ time and /O(m)/ memory.
@@ -489,7 +499,7 @@ vertexList (AM g val _) = Maybe.mapMaybe val (AIM.vertexList g)
 -- -- -- edgeList . 'transpose'    == 'Data.List.sort' . 'map' 'Data.Tuple.swap' . edgeList
 -- -- -- @
 edgeList :: AdjacencyMapPoc a -> [(a, a)]
-edgeList (AM g val _) = Maybe.mapMaybe (\(from, to) -> val from >>= (\f -> fmap (f,) (val to))) (AIM.edgeList g)
+edgeList g@(AM aim _ _) = Maybe.mapMaybe (\(from, to) -> value g from >>= (\f -> fmap (f,) (value g to))) (AIM.edgeList aim)
 
 -- -- -- | The set of vertices of a given graph.
 -- -- -- Complexity: /O(n)/ time and memory.
