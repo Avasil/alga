@@ -30,7 +30,7 @@ module Algebra.Graph.AdjacencyMapPoc (
     -- isSubgraphOf,
 
     -- -- * Graph properties
-    isEmpty, hasVertex, hasEdge, vertexCount, edgeCount, vertexList, edgeList
+    isEmpty, hasVertex, hasEdge, vertexCount, edgeCount, vertexList, edgeList,
     -- adjacencyList, vertexSet, edgeSet, preSet, postSet,
 
     -- -- * Standard families of graphs
@@ -38,6 +38,7 @@ module Algebra.Graph.AdjacencyMapPoc (
     -- forest,
 
     -- -- * Graph transformation
+    removeVertex, removeEdge
     -- removeVertex, removeEdge, replaceVertex, mergeVertices, transpose, gmap,
     -- induce, induceJust,
 
@@ -337,9 +338,9 @@ connect g1 g2 = AM (AIM.connect (graph g1) newGraph) newValue newIndex
 -- -- -- 'vertexCount' . vertices == 'length' . 'Data.List.nub'
 -- -- -- 'vertexSet'   . vertices == Set.'Set.fromList'
 -- -- -- @
--- -- vertices :: Ord a => [a] -> AdjacencyMapPoc a
--- -- vertices = AdjacencyMapPoc . Map.fromList . map (\x -> (x, Set.empty))
--- -- {-# NOINLINE [1] vertices #-}
+-- vertices :: Ord a => [a] -> AdjacencyMapPoc a
+-- vertices vs = AdjacencyMapPoc . Map.fromList . map (\x -> (x, Set.empty))
+-- {-# NOINLINE [1] vertices #-}
 
 -- -- -- | Construct the graph from a list of edges.
 -- -- -- Complexity: /O((n + m) * log(n))/ time and /O(n + m)/ memory.
@@ -437,7 +438,7 @@ isEmpty x = AIM.isEmpty (graph x)
 -- -- -- hasVertex x . 'removeVertex' x == 'const' False
 -- -- -- @
 hasVertex :: Ord a => a -> AdjacencyMapPoc a -> Bool
-hasVertex a g = Maybe.isJust (index g a)
+hasVertex a g = Map.member a (indexMap g)
 
 -- -- -- | Check if a graph contains a given edge.
 -- -- -- Complexity: /O(log(n))/ time.
@@ -450,7 +451,7 @@ hasVertex a g = Maybe.isJust (index g a)
 -- -- -- hasEdge x y                  == 'elem' (x,y) . 'edgeList'
 -- -- -- @
 hasEdge :: Ord a => a -> a -> AdjacencyMapPoc a -> Bool
-hasEdge u v g@(AM aim _ _) = Maybe.isJust $ index g u >>= (\a -> fmap (\b -> AIM.hasEdge a b aim) (index g v))
+hasEdge u v g@(AM aim _ _) = Maybe.fromMaybe False $ index g u >>= (\a -> fmap (\b -> AIM.hasEdge a b aim) (index g v))
 
 -- -- -- | The number of vertices in a graph.
 -- -- -- Complexity: /O(1)/ time.
@@ -462,7 +463,7 @@ hasEdge u v g@(AM aim _ _) = Maybe.isJust $ index g u >>= (\a -> fmap (\b -> AIM
 -- -- -- vertexCount x \< vertexCount y ==> x \< y
 -- -- -- @
 vertexCount :: AdjacencyMapPoc a -> Int
-vertexCount = AIM.vertexCount . graph
+vertexCount = IntMap.size . valueMap
 
 -- -- -- | The number of edges in a graph.
 -- -- -- Complexity: /O(n)/ time.
@@ -699,31 +700,38 @@ edgeList g@(AM aim _ _) = Maybe.mapMaybe (\(from, to) -> value g from >>= (\f ->
 -- -- forest :: Ord a => Forest a -> AdjacencyMapPoc a
 -- -- forest = overlays . map tree
 
--- -- -- | Remove a vertex from a given graph.
--- -- -- Complexity: /O(n*log(n))/ time.
--- -- --
--- -- -- @
--- -- -- removeVertex x ('vertex' x)       == 'empty'
--- -- -- removeVertex 1 ('vertex' 2)       == 'vertex' 2
--- -- -- removeVertex x ('edge' x x)       == 'empty'
--- -- -- removeVertex 1 ('edge' 1 2)       == 'vertex' 2
--- -- -- removeVertex x . removeVertex x == removeVertex x
--- -- -- @
--- -- removeVertex :: Ord a => a -> AdjacencyMapPoc a -> AdjacencyMapPoc a
--- -- removeVertex x = AM . Map.map (Set.delete x) . Map.delete x . AdjacencyMapPoc
+-- | Remove a vertex from a given graph.
+-- Complexity: /O(n*log(n))/ time.
+--
+-- @
+-- removeVertex x ('vertex' x)       == 'empty'
+-- removeVertex 1 ('vertex' 2)       == 'vertex' 2
+-- removeVertex x ('edge' x x)       == 'empty'
+-- removeVertex 1 ('edge' 1 2)       == 'vertex' 2
+-- removeVertex x . removeVertex x == removeVertex x
+-- @
+removeVertex :: Ord a => a -> AdjacencyMapPoc a -> AdjacencyMapPoc a
+removeVertex a g = AM newGraph newValue newIndex
+    where 
+        (maybeIndex, newIndex) = Map.updateLookupWithKey (\_ _ -> Nothing) a (indexMap g)
+        (newGraph, newValue)   = Maybe.maybe (graph g, valueMap g) (\idx -> (AIM.removeVertex idx (graph g), IntMap.delete idx (valueMap g))) maybeIndex
 
--- -- -- | Remove an edge from a given graph.
--- -- -- Complexity: /O(log(n))/ time.
--- -- --
--- -- -- @
--- -- -- removeEdge x y ('edge' x y)       == 'vertices' [x,y]
--- -- -- removeEdge x y . removeEdge x y == removeEdge x y
--- -- -- removeEdge x y . 'removeVertex' x == 'removeVertex' x
--- -- -- removeEdge 1 1 (1 * 1 * 2 * 2)  == 1 * 2 * 2
--- -- -- removeEdge 1 2 (1 * 1 * 2 * 2)  == 1 * 1 + 2 * 2
--- -- -- @
--- -- removeEdge :: Ord a => a -> a -> AdjacencyMapPoc a -> AdjacencyMapPoc a
--- -- removeEdge x y = AM . Map.adjust (Set.delete y) x . AdjacencyMapPoc
+-- | Remove an edge from a given graph.
+-- Complexity: /O(log(n))/ time.
+--
+-- @
+-- removeEdge x y ('edge' x y)       == 'vertices' [x,y]
+-- removeEdge x y . removeEdge x y == removeEdge x y
+-- removeEdge x y . 'removeVertex' x == 'removeVertex' x
+-- removeEdge 1 1 (1 * 1 * 2 * 2)  == 1 * 2 * 2
+-- removeEdge 1 2 (1 * 1 * 2 * 2)  == 1 * 1 + 2 * 2
+-- @
+removeEdge :: Ord a => a -> a -> AdjacencyMapPoc a -> AdjacencyMapPoc a
+removeEdge x y g = AM newGraph (valueMap g) (indexMap g)
+    where 
+        maybeIndexX = index g x
+        maybeIndexY = index g y
+        newGraph    = Maybe.fromMaybe (graph g) (maybeIndexX >>= (\idX -> fmap (\idY -> AIM.removeEdge idX idY (graph g)) maybeIndexY))
 
 -- -- -- | The function @'replaceVertex' x y@ replaces vertex @x@ with vertex @y@ in a
 -- -- -- given 'AdjacencyMapPoc'. If @y@ already exists, @x@ and @y@ will be merged.
