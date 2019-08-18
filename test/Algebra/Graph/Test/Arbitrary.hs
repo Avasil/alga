@@ -27,6 +27,7 @@ import Algebra.Graph.Label
 import qualified Algebra.Graph.Acyclic.AdjacencyMap   as AAM
 import qualified Algebra.Graph.AdjacencyIntMap        as AIM
 import qualified Algebra.Graph.AdjacencyMap           as AM
+import qualified Algebra.Graph.AdjacencyMapPoc        as AMPoc
 import qualified Algebra.Graph.Bipartite.AdjacencyMap as BAM
 import qualified Algebra.Graph.NonEmpty.AdjacencyMap  as NAM
 import qualified Algebra.Graph.Class                  as C
@@ -140,6 +141,14 @@ instance (Arbitrary a, Ord a) => Arbitrary (AM.AdjacencyMap a) where
       where
          shrinkVertices = [ AM.removeVertex v g | v <- AM.vertexList g ]
          shrinkEdges    = [ AM.removeEdge v w g | (v, w) <- AM.edgeList g ]
+        
+instance (Arbitrary a, Ord a) => Arbitrary (AMPoc.AdjacencyMapPoc a) where
+    arbitrary = AMPoc.stars <$> arbitrary
+
+    shrink g = shrinkVertices ++ shrinkEdges
+      where
+         shrinkVertices = [ AMPoc.removeVertex v g | v <- AMPoc.vertexList g ]
+         shrinkEdges    = [ AMPoc.removeEdge v w g | (v, w) <- AMPoc.edgeList g ]
 
 -- | Generate an arbitrary non-empty 'NAM.AdjacencyMap'. It is guaranteed that
 -- the resulting adjacency map is 'consistent'.

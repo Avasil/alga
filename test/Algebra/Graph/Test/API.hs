@@ -17,7 +17,7 @@ module Algebra.Graph.Test.API (
     API (..), Mono (..), toIntAPI,
 
     -- * APIs of various graph data types
-    adjacencyMapAPI, adjacencyIntMapAPI, graphAPI, relationAPI,
+    adjacencyMapAPI, adjacencyMapPocAPI, adjacencyIntMapAPI, graphAPI, relationAPI,
     symmetricRelationAPI, labelledGraphAPI, labelledAdjacencyMapAPI
     ) where
 
@@ -34,6 +34,7 @@ import qualified Algebra.Graph                                as G
 import qualified Algebra.Graph.AdjacencyIntMap                as AIM
 import qualified Algebra.Graph.AdjacencyIntMap.Algorithm      as AIM
 import qualified Algebra.Graph.AdjacencyMap                   as AM
+import qualified Algebra.Graph.AdjacencyMapPoc                as AMPoc
 import qualified Algebra.Graph.AdjacencyMap.Algorithm         as AM
 import qualified Algebra.Graph.Labelled                       as LG
 import qualified Algebra.Graph.Labelled.AdjacencyMap          as LAM
@@ -218,6 +219,82 @@ adjacencyMapAPI = API
     , transitiveClosure          = AM.transitiveClosure
     , consistent                 = AM.consistent
     , fromAdjacencySets          = AM.fromAdjacencySets }
+
+    -- | The API of 'AMPoc.AdjacencyMapPoc'.
+adjacencyMapPocAPI :: API AMPoc.AdjacencyMapPoc Ord
+adjacencyMapPocAPI = API
+    { empty                      = AMPoc.empty
+    , vertex                     = AMPoc.vertex
+    , edge                       = AMPoc.edge
+    , overlay                    = AMPoc.overlay
+    , connect                    = AMPoc.connect
+    , vertices                   = AMPoc.vertices
+    , edges                      = AMPoc.edges
+    -- , overlays                   = AM.overlays
+    -- , connects                   = AM.connects
+    -- , toGraph                    = T.toGraph
+    -- , foldg                      = T.foldg
+    -- , isSubgraphOf               = AM.isSubgraphOf
+    , isEmpty                    = AMPoc.isEmpty
+    -- , size                       = G.size . T.toGraph
+    , hasVertex                  = AMPoc.hasVertex
+    , hasEdge                    = AMPoc.hasEdge
+    , vertexCount                = AMPoc.vertexCount
+    , edgeCount                  = AMPoc.edgeCount
+    , vertexList                 = AMPoc.vertexList
+    , edgeList                   = AMPoc.edgeList
+    -- , vertexSet                  = AM.vertexSet
+    -- , vertexIntSet               = T.vertexIntSet
+    -- , edgeSet                    = AM.edgeSet
+    -- , preSet                     = AM.preSet
+    -- , preIntSet                  = T.preIntSet
+    -- , postSet                    = AM.postSet
+    -- , postIntSet                 = T.postIntSet
+    -- , adjacencyList              = AM.adjacencyList
+    -- , adjacencyMap               = AM.adjacencyMap
+    -- , adjacencyIntMap            = T.adjacencyIntMap
+    -- , adjacencyMapTranspose      = T.adjacencyMapTranspose
+    -- , adjacencyIntMapTranspose   = T.adjacencyIntMapTranspose
+    -- , bfsForest                  = AM.bfsForest
+    -- , bfsForestFrom              = AM.bfsForestFrom
+    -- , bfs                        = AM.bfs
+    -- , dfsForest                  = AM.dfsForest
+    -- , dfsForestFrom              = AM.dfsForestFrom
+    -- , dfs                        = AM.dfs
+    -- , reachable                  = AM.reachable
+    -- , topSort                    = AM.topSort
+    -- , isAcyclic                  = AM.isAcyclic
+    -- , toAdjacencyMap             = T.toAdjacencyMap
+    -- , toAdjacencyIntMap          = T.toAdjacencyIntMap
+    -- , toAdjacencyMapTranspose    = T.toAdjacencyMapTranspose
+    -- , toAdjacencyIntMapTranspose = T.toAdjacencyIntMapTranspose
+    -- , isDfsForestOf              = AM.isDfsForestOf
+    -- , isTopSortOf                = AM.isTopSortOf
+    -- , path                       = AM.path
+    -- , circuit                    = AM.circuit
+    -- , clique                     = AM.clique
+    -- , biclique                   = AM.biclique
+    -- , star                       = AM.star
+    -- , stars                      = AM.stars
+    -- , tree                       = AM.tree
+    -- , forest                     = AM.forest
+    , removeVertex               = AMPoc.removeVertex
+    , removeEdge                 = AMPoc.removeEdge
+    -- , replaceVertex              = AM.replaceVertex
+    -- , mergeVertices              = AM.mergeVertices
+    -- , transpose                  = AM.transpose
+    -- , gmap                       = AM.gmap
+    -- , induce                     = AM.induce
+    -- , induceJust                 = AM.induceJust
+    -- , compose                    = AM.compose
+    -- , box                        = AM.box
+    -- , closure                    = AM.closure
+    -- , reflexiveClosure           = AM.reflexiveClosure
+    -- , symmetricClosure           = AM.symmetricClosure
+    -- , transitiveClosure          = AM.transitiveClosure
+    -- , consistent                 = AM.consistent
+    -- , fromAdjacencySets          = AM.fromAdjacencySets 
+    }
 
 -- | The API of 'G.Graph'.
 graphAPI :: API G.Graph Ord

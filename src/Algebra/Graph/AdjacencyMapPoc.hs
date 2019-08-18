@@ -23,7 +23,7 @@ module Algebra.Graph.AdjacencyMapPoc (
     AdjacencyMapPoc,
 
     -- -- * Basic graph construction primitives
-    empty, vertex, edge, overlay, connect, edges,
+    empty, vertex, edge, overlay, connect, vertices, edges,
     -- empty, vertex, edge, overlay, connect, vertices, edges, overlays, connects,
 
     -- -- * Relations on graphs
@@ -34,6 +34,7 @@ module Algebra.Graph.AdjacencyMapPoc (
     -- adjacencyList, vertexSet, edgeSet, preSet, postSet,
 
     -- -- * Standard families of graphs
+    star, stars,
     -- path, circuit, clique, biclique, star, stars, fromAdjacencySets, tree,
     -- forest,
 
@@ -53,17 +54,17 @@ module Algebra.Graph.AdjacencyMapPoc (
     ) where
 
 import Control.DeepSeq
--- import Data.List ((\\))
+import Data.List ((\\))
 import Data.Map.Strict (Map)
 -- import Data.Monoid
--- import Data.Set (Set)
+import Data.Set (Set)
 -- import Data.Tree
 import GHC.Generics
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe      as Maybe
--- import qualified Data.Set        as Set
+import qualified Data.Set        as Set
 import qualified Algebra.Graph.AdjacencyIntMap as AIM
 
 {-| The 'AdjacencyMapPoc' data type represents a graph by a map of vertices to
@@ -168,29 +169,39 @@ value g i = IntMap.lookup i (valueMap g)
 index :: Ord a => AdjacencyMapPoc a -> a -> Maybe Int
 index g a = Map.lookup a (indexMap g)
 
-instance Eq (AdjacencyMapPoc a) where
-    (==) x y = (==) (graph x) (graph y) -- todo: needs to convert mappings
+instance Ord a => Eq (AdjacencyMapPoc a) where
+    (==) x y = and
+        [ (==) (vertexCount x) (vertexCount  y)
+        , (==) (vertexSet   x) (vertexSet    y)
+        , (==) (edgeCount   x) (edgeCount    y)
+        , (==) (edgeSet     x) (edgeSet      y) ]
 
-instance Ord (AdjacencyMapPoc a) where
-    compare x y = compare (graph x) (graph y) -- todo: needs to convert mappings
+instance Ord a => Ord (AdjacencyMapPoc a) where
+    compare x y = mconcat
+        [ compare (vertexCount x) (vertexCount  y)
+        , compare (vertexSet   x) (vertexSet    y)
+        , compare (edgeCount   x) (edgeCount    y)
+        , compare (edgeSet     x) (edgeSet      y) ]
 
--- instance (Ord a, Show a) => Show (AdjacencyMapPoc a) where
---     showsPrec p am@(AdjacencyMapPoc g _ _)
---         | null vs    = showString "empty"
---         | null es    = showParen (p > 10) $ vshow vs
---         | vs == used = showParen (p > 10) $ eshow es
---         | otherwise  = showParen (p > 10) $ showString "overlay ("
---                      . vshow (vs \\ used) . showString ") ("
---                      . eshow es . showString ")"
---       where
---         vs             = vertexList am
---         es             = edgeList am
---         vshow [x]      = showString "vertex "   . showsPrec 11 x
---         vshow xs       = showString "vertices " . showsPrec 11 xs
---         eshow [(x, y)] = showString "edge "     . showsPrec 11 x .
---                          showString " "         . showsPrec 11 y
---         eshow xs       = showString "edges "    . showsPrec 11 xs
---         used           = Set.toAscList (referredToVertexSet m)
+-- test perf with gmap ?
+instance (Ord a, Show a) => Show (AdjacencyMapPoc a) where
+    showsPrec p (AM g _ _) = showsPrec p g
+    -- showsPrec p am@(AM g _ _)
+    --     | null vs    = showString "empty"
+    --     | null es    = showParen (p > 10) $ vshow vs
+    --     | vs == used = showParen (p > 10) $ eshow es
+    --     | otherwise  = showParen (p > 10) $ showString "overlay ("
+    --                  . vshow (vs \\ used) . showString ") ("
+    --                  . eshow es . showString ")"
+    --   where
+    --     vs             = vertexList am
+    --     es             = edgeList am
+    --     vshow [x]      = showString "vertex "   . showsPrec 11 x
+    --     vshow xs       = showString "vertices " . showsPrec 11 xs
+    --     eshow [(x, y)] = showString "edge "     . showsPrec 11 x .
+    --                      showString " "         . showsPrec 11 y
+    --     eshow xs       = showString "edges "    . showsPrec 11 xs
+    --     used           = Set.toAscList (referredToVertexSet m)
 
 -- | __Note:__ this does not satisfy the usual ring laws; see 'AdjacencyMapPoc'
 -- for more details.
@@ -271,18 +282,13 @@ overlay :: Ord a => AdjacencyMapPoc a -> AdjacencyMapPoc a -> AdjacencyMapPoc a
 overlay g1 g2 = AM (AIM.overlay (graph g1) newGraph) newValue newIndex
     where 
         f nodes n = 
-            foldr (\(v :: Int) (valuePairs :: IntMap a, indexPairs :: Map a Int, n) -> 
-                let maybeA = IntMap.lookup v valuePairs
-                    (newN, newValuePairs, newIndexPairs) = Maybe.fromMaybe 
-                        (Maybe.maybe (n, valuePairs, indexPairs) (\a -> (n + 1, IntMap.insert n a valuePairs, Map.insert a n indexPairs)) (value g2 v))
-                        (maybeA >>= (\newA -> fmap (\oldA -> 
-                            if newA == oldA
-                                then (n, valuePairs, indexPairs) 
-                                else (n + 1, IntMap.insert n oldA valuePairs, Map.insert oldA n indexPairs))
-                            (value g2 v)))
-                in (newValuePairs, newIndexPairs, newN))
-                (valueMap g1, indexMap g1, n)
-                nodes
+            foldr (\(v :: Int) latest@(valuePairs :: IntMap a, indexPairs :: Map a Int, n) -> 
+                    Maybe.maybe latest (\a -> 
+                        if Map.member a indexPairs 
+                            then latest 
+                            else (IntMap.insert n a valuePairs, Map.insert a n indexPairs, n + 1)) (value g2 v))
+                  (valueMap g1, indexMap g1, n)
+                  nodes
         n = AIM.vertexCount (graph g1)
         (newValue, newIndex, _) = f (AIM.vertexList (graph g2)) n
         newGraph = AIM.gmap (\v -> Maybe.fromMaybe v (value g2 v >>= (`Map.lookup` newIndex))) (graph g2)
@@ -310,37 +316,36 @@ connect :: Ord a => AdjacencyMapPoc a -> AdjacencyMapPoc a -> AdjacencyMapPoc a
 connect g1 g2 = AM (AIM.connect (graph g1) newGraph) newValue newIndex
     where 
         f nodes n = 
-            foldr (\(v :: Int) (valuePairs :: IntMap a, indexPairs :: Map a Int, n) -> 
-                let maybeA = IntMap.lookup v valuePairs
-                    (newN, newValuePairs, newIndexPairs) = Maybe.fromMaybe 
-                        (Maybe.maybe (n, valuePairs, indexPairs) (\a -> (n + 1, IntMap.insert n a valuePairs, Map.insert a n indexPairs)) (value g2 v))
-                        (maybeA >>= (\newA -> fmap (\oldA -> 
-                            if newA == oldA
-                                then (n, valuePairs, indexPairs) 
-                                else (n + 1, IntMap.insert n oldA valuePairs, Map.insert oldA n indexPairs))
-                            (value g2 v)))
-                in (newValuePairs, newIndexPairs, newN))
-                (valueMap g1, indexMap g1, n)
-                nodes
+            foldr (\(v :: Int) latest@(valuePairs :: IntMap a, indexPairs :: Map a Int, n) -> 
+                    Maybe.maybe latest (\a -> 
+                        if Map.member a indexPairs 
+                            then latest 
+                            else (IntMap.insert n a valuePairs, Map.insert a n indexPairs, n + 1)) (value g2 v))
+                  (valueMap g1, indexMap g1, n)
+                  nodes
         n = AIM.vertexCount (graph g1)
         (newValue, newIndex, _) = f (AIM.vertexList (graph g2)) n
         newGraph = AIM.gmap (\v -> Maybe.fromMaybe v (value g2 v >>= (`Map.lookup` newIndex))) (graph g2)
 {-# NOINLINE [1] connect #-}
 
--- -- -- | Construct the graph comprising a given list of isolated vertices.
--- -- -- Complexity: /O(L * log(L))/ time and /O(L)/ memory, where /L/ is the length
--- -- -- of the given list.
--- -- --
--- -- -- @
--- -- -- vertices []            == 'empty'
--- -- -- vertices [x]           == 'vertex' x
--- -- -- 'hasVertex' x . vertices == 'elem' x
--- -- -- 'vertexCount' . vertices == 'length' . 'Data.List.nub'
--- -- -- 'vertexSet'   . vertices == Set.'Set.fromList'
--- -- -- @
--- vertices :: Ord a => [a] -> AdjacencyMapPoc a
--- vertices vs = AdjacencyMapPoc . Map.fromList . map (\x -> (x, Set.empty))
--- {-# NOINLINE [1] vertices #-}
+-- | Construct the graph comprising a given list of isolated vertices.
+-- Complexity: /O(L * log(L))/ time and /O(L)/ memory, where /L/ is the length
+-- of the given list.
+--
+-- @
+-- vertices []            == 'empty'
+-- vertices [x]           == 'vertex' x
+-- 'hasVertex' x . vertices == 'elem' x
+-- 'vertexCount' . vertices == 'length' . 'Data.List.nub'
+-- 'vertexSet'   . vertices == Set.'Set.fromList'
+-- @
+vertices :: Ord a => [a] -> AdjacencyMapPoc a
+vertices vs = AM (AIM.vertices newGraph) newValue newIndex
+    where
+        (newGraph, newValue, newIndex, _) = foldr (\v (newGraph, newValue, newIndex, n) -> 
+            (n : newGraph, IntMap.insert n v newValue, Map.insert v n newIndex, n + 1)
+            ) ([], IntMap.empty, Map.empty, 0) (Set.fromList vs)
+{-# NOINLINE [1] vertices #-}
 
 -- -- -- | Construct the graph from a list of edges.
 -- -- -- Complexity: /O((n + m) * log(n))/ time and /O(n + m)/ memory.
@@ -372,19 +377,19 @@ edges es = AM (AIM.edges newEdges) newValue newIndex
         finalResult from to valueMap indexMap n lastEdges = let (from', valueMap', indexMap', n') = costam from valueMap indexMap n
                                                                 (to', valueMap'', indexMap'', n'') = costam to valueMap' indexMap' n'
                                                             in  ((from', to') : lastEdges, valueMap'', indexMap'', n'')
--- -- -- | Overlay a given list of graphs.
--- -- -- Complexity: /O((n + m) * log(n))/ time and /O(n + m)/ memory.
--- -- --
--- -- -- @
--- -- -- overlays []        == 'empty'
--- -- -- overlays [x]       == x
--- -- -- overlays [x,y]     == 'overlay' x y
--- -- -- overlays           == 'foldr' 'overlay' 'empty'
--- -- -- 'isEmpty' . overlays == 'all' 'isEmpty'
--- -- -- @
--- -- overlays :: Ord a => [AdjacencyMapPoc a] -> AdjacencyMapPoc a
--- -- overlays = AM . Map.unionsWith Set.union . map AdjacencyMapPoc
--- -- {-# NOINLINE overlays #-}
+-- | Overlay a given list of graphs.
+-- Complexity: /O((n + m) * log(n))/ time and /O(n + m)/ memory.
+--
+-- @
+-- overlays []        == 'empty'
+-- overlays [x]       == x
+-- overlays [x,y]     == 'overlay' x y
+-- overlays           == 'foldr' 'overlay' 'empty'
+-- 'isEmpty' . overlays == 'all' 'isEmpty'
+-- @
+overlays :: Ord a => [AdjacencyMapPoc a] -> AdjacencyMapPoc a
+overlays = foldr overlay empty
+{-# NOINLINE overlays #-}
 
 -- -- -- | Connect a given list of graphs.
 -- -- -- Complexity: /O((n + m) * log(n))/ time and /O(n + m)/ memory.
@@ -453,15 +458,15 @@ hasVertex a g = Map.member a (indexMap g)
 hasEdge :: Ord a => a -> a -> AdjacencyMapPoc a -> Bool
 hasEdge u v g@(AM aim _ _) = Maybe.fromMaybe False $ index g u >>= (\a -> fmap (\b -> AIM.hasEdge a b aim) (index g v))
 
--- -- -- | The number of vertices in a graph.
--- -- -- Complexity: /O(1)/ time.
--- -- --
--- -- -- @
--- -- -- vertexCount 'empty'             ==  0
--- -- -- vertexCount ('vertex' x)        ==  1
--- -- -- vertexCount                   ==  'length' . 'vertexList'
--- -- -- vertexCount x \< vertexCount y ==> x \< y
--- -- -- @
+-- | The number of vertices in a graph.
+-- Complexity: /O(1)/ time.
+--
+-- @
+-- vertexCount 'empty'             ==  0
+-- vertexCount ('vertex' x)        ==  1
+-- vertexCount                   ==  'length' . 'vertexList'
+-- vertexCount x \< vertexCount y ==> x \< y
+-- @
 vertexCount :: AdjacencyMapPoc a -> Int
 vertexCount = IntMap.size . valueMap
 
@@ -486,9 +491,9 @@ edgeCount = AIM.edgeCount . graph
 -- -- vertexList . 'vertices' == 'Data.List.nub' . 'Data.List.sort'
 -- -- @
 vertexList :: AdjacencyMapPoc a -> [a]
-vertexList g@(AM aim _ _) = Maybe.mapMaybe (value g) (AIM.vertexList aim)
+vertexList g = Map.keys (indexMap g)
 
--- -- -- | The sorted list of edges of a graph.
+-- -- -- | The list of edges of a graph.
 -- -- -- Complexity: /O(n + m)/ time and /O(m)/ memory.
 -- -- --
 -- -- -- @
@@ -502,28 +507,28 @@ vertexList g@(AM aim _ _) = Maybe.mapMaybe (value g) (AIM.vertexList aim)
 edgeList :: AdjacencyMapPoc a -> [(a, a)]
 edgeList g@(AM aim _ _) = Maybe.mapMaybe (\(from, to) -> value g from >>= (\f -> fmap (f,) (value g to))) (AIM.edgeList aim)
 
--- -- -- | The set of vertices of a given graph.
--- -- -- Complexity: /O(n)/ time and memory.
--- -- --
--- -- -- @
--- -- -- vertexSet 'empty'      == Set.'Set.empty'
--- -- -- vertexSet . 'vertex'   == Set.'Set.singleton'
--- -- -- vertexSet . 'vertices' == Set.'Set.fromList'
--- -- -- @
--- -- vertexSet :: AdjacencyMapPoc a -> Set a
--- -- vertexSet = Map.keysSet . AdjacencyMapPoc
+-- | The set of vertices of a given graph.
+-- Complexity: /O(n)/ time and memory.
+--
+-- @
+-- vertexSet 'empty'      == Set.'Set.empty'
+-- vertexSet . 'vertex'   == Set.'Set.singleton'
+-- vertexSet . 'vertices' == Set.'Set.fromList'
+-- @
+vertexSet :: AdjacencyMapPoc a -> Set a
+vertexSet g = Map.keysSet (indexMap g)
 
--- -- -- | The set of edges of a given graph.
--- -- -- Complexity: /O((n + m) * log(m))/ time and /O(m)/ memory.
--- -- --
--- -- -- @
--- -- -- edgeSet 'empty'      == Set.'Set.empty'
--- -- -- edgeSet ('vertex' x) == Set.'Set.empty'
--- -- -- edgeSet ('edge' x y) == Set.'Set.singleton' (x,y)
--- -- -- edgeSet . 'edges'    == Set.'Set.fromList'
--- -- -- @
--- -- edgeSet :: Eq a => AdjacencyMapPoc a -> Set (a, a)
--- -- edgeSet = Set.fromAscList . edgeList
+-- | The set of edges of a given graph.
+-- Complexity: /O((n + m) * log(m))/ time and /O(m)/ memory.
+--
+-- @
+-- edgeSet 'empty'      == Set.'Set.empty'
+-- edgeSet ('vertex' x) == Set.'Set.empty'
+-- edgeSet ('edge' x y) == Set.'Set.singleton' (x,y)
+-- edgeSet . 'edges'    == Set.'Set.fromList'
+-- @
+edgeSet :: Ord a => AdjacencyMapPoc a -> Set (a, a)
+edgeSet = Set.fromList . edgeList
 
 -- -- -- | The sorted /adjacency list/ of a graph.
 -- -- -- Complexity: /O(n + m)/ time and /O(m)/ memory.
@@ -626,37 +631,37 @@ edgeList g@(AM aim _ _) = Maybe.mapMaybe (\(from, to) -> value g from >>= (\f ->
 -- --     y = Set.fromList ys
 -- --     adjacent v = if v `Set.member` x then y else Set.empty
 
--- -- -- TODO: Optimise.
--- -- -- | The /star/ formed by a centre vertex connected to a list of leaves.
--- -- -- Complexity: /O((n + m) * log(n))/ time and /O(n + m)/ memory.
--- -- --
--- -- -- @
--- -- -- star x []    == 'vertex' x
--- -- -- star x [y]   == 'edge' x y
--- -- -- star x [y,z] == 'edges' [(x,y), (x,z)]
--- -- -- star x ys    == 'connect' ('vertex' x) ('vertices' ys)
--- -- -- @
--- -- star :: Ord a => a -> [a] -> AdjacencyMapPoc a
--- -- star x [] = vertex x
--- -- star x ys = connect (vertex x) (vertices ys)
--- -- {-# INLINE star #-}
+-- TODO: Optimise.
+-- | The /star/ formed by a centre vertex connected to a list of leaves.
+-- Complexity: /O((n + m) * log(n))/ time and /O(n + m)/ memory.
+--
+-- @
+-- star x []    == 'vertex' x
+-- star x [y]   == 'edge' x y
+-- star x [y,z] == 'edges' [(x,y), (x,z)]
+-- star x ys    == 'connect' ('vertex' x) ('vertices' ys)
+-- @
+star :: Ord a => a -> [a] -> AdjacencyMapPoc a
+star x [] = vertex x
+star x ys = connect (vertex x) (vertices ys)
+{-# INLINE star #-}
 
--- -- -- | The /stars/ formed by overlaying a list of 'star's. An inverse of
--- -- -- 'adjacencyList'.
--- -- -- Complexity: /O(L * log(n))/ time, memory and size, where /L/ is the total
--- -- -- size of the input.
--- -- --
--- -- -- @
--- -- -- stars []                      == 'empty'
--- -- -- stars [(x, [])]               == 'vertex' x
--- -- -- stars [(x, [y])]              == 'edge' x y
--- -- -- stars [(x, ys)]               == 'star' x ys
--- -- -- stars                         == 'overlays' . 'map' ('uncurry' 'star')
--- -- -- stars . 'adjacencyList'         == id
--- -- -- 'overlay' (stars xs) (stars ys) == stars (xs '++' ys)
--- -- -- @
--- -- stars :: Ord a => [(a, [a])] -> AdjacencyMapPoc a
--- -- stars = fromAdjacencySets . map (fmap Set.fromList)
+-- | The /stars/ formed by overlaying a list of 'star's. An inverse of
+-- 'adjacencyList'.
+-- Complexity: /O(L * log(n))/ time, memory and size, where /L/ is the total
+-- size of the input.
+--
+-- @
+-- stars []                      == 'empty'
+-- stars [(x, [])]               == 'vertex' x
+-- stars [(x, [y])]              == 'edge' x y
+-- stars [(x, ys)]               == 'star' x ys
+-- stars                         == 'overlays' . 'map' ('uncurry' 'star')
+-- stars . 'adjacencyList'         == id
+-- 'overlay' (stars xs) (stars ys) == stars (xs '++' ys)
+-- @
+stars :: Ord a => [(a, [a])] -> AdjacencyMapPoc a
+stars = overlays . map (uncurry star)
 
 -- -- -- | Construct a graph from a list of adjacency sets; a variation of 'stars'.
 -- -- -- Complexity: /O((n + m) * log(n))/ time and /O(n + m)/ memory.

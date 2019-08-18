@@ -1,6 +1,7 @@
 import Algebra.Graph.Test.Acyclic.AdjacencyMap
 import Algebra.Graph.Test.AdjacencyIntMap
 import Algebra.Graph.Test.AdjacencyMap
+import Algebra.Graph.Test.AdjacencyMapPoc
 import Algebra.Graph.Test.NonEmpty.AdjacencyMap
 import Algebra.Graph.Test.Export
 import Algebra.Graph.Test.Graph
@@ -30,6 +31,7 @@ main = do
     go "Acyclic.AdjacencyMap"   testAcyclicAdjacencyMap
     go "AdjacencyIntMap"        testAdjacencyIntMap
     go "AdjacencyMap"           testAdjacencyMap
+    go "AdjacencyMapPoc"        testAdjacencyMapPoc
     go "Bipartite.AdjacencyMap" testBipartiteAdjacencyMap
     go "Export"                 testExport
     go "Graph"                  testGraph

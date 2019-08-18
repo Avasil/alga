@@ -130,6 +130,7 @@ test-suite test-alga
                         Algebra.Graph.Test.Acyclic.AdjacencyMap,
                         Algebra.Graph.Test.AdjacencyIntMap,
                         Algebra.Graph.Test.AdjacencyMap,
+                        Algebra.Graph.Test.AdjacencyMapPoc,
                         Algebra.Graph.Test.Arbitrary,
                         Algebra.Graph.Test.Bipartite.AdjacencyMap,
                         Algebra.Graph.Test.Export,
