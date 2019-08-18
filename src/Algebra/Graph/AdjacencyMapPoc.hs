@@ -23,7 +23,7 @@ module Algebra.Graph.AdjacencyMapPoc (
     AdjacencyMapPoc,
 
     -- -- * Basic graph construction primitives
-    empty, vertex, edge, overlay, connect, vertices, edges,
+    empty, vertex, edge, overlay, connect, vertices, edges, overlays, connects,
     -- empty, vertex, edge, overlay, connect, vertices, edges, overlays, connects,
 
     -- -- * Relations on graphs
@@ -31,6 +31,7 @@ module Algebra.Graph.AdjacencyMapPoc (
 
     -- -- * Graph properties
     isEmpty, hasVertex, hasEdge, vertexCount, edgeCount, vertexList, edgeList,
+    vertexSet, edgeSet,
     -- adjacencyList, vertexSet, edgeSet, preSet, postSet,
 
     -- -- * Standard families of graphs
@@ -39,7 +40,7 @@ module Algebra.Graph.AdjacencyMapPoc (
     -- forest,
 
     -- -- * Graph transformation
-    removeVertex, removeEdge
+    removeVertex, removeEdge, replaceVertex, mergeVertices, gmap
     -- removeVertex, removeEdge, replaceVertex, mergeVertices, transpose, gmap,
     -- induce, induceJust,
 
@@ -391,19 +392,19 @@ overlays :: Ord a => [AdjacencyMapPoc a] -> AdjacencyMapPoc a
 overlays = foldr overlay empty
 {-# NOINLINE overlays #-}
 
--- -- -- | Connect a given list of graphs.
--- -- -- Complexity: /O((n + m) * log(n))/ time and /O(n + m)/ memory.
--- -- --
--- -- -- @
--- -- -- connects []        == 'empty'
--- -- -- connects [x]       == x
--- -- -- connects [x,y]     == 'connect' x y
--- -- -- connects           == 'foldr' 'connect' 'empty'
--- -- -- 'isEmpty' . connects == 'all' 'isEmpty'
--- -- -- @
--- -- connects :: Ord a => [AdjacencyMapPoc a] -> AdjacencyMapPoc a
--- -- connects = foldr connect empty
--- -- {-# NOINLINE connects #-}
+-- | Connect a given list of graphs.
+-- Complexity: /O((n + m) * log(n))/ time and /O(n + m)/ memory.
+--
+-- @
+-- connects []        == 'empty'
+-- connects [x]       == x
+-- connects [x,y]     == 'connect' x y
+-- connects           == 'foldr' 'connect' 'empty'
+-- 'isEmpty' . connects == 'all' 'isEmpty'
+-- @
+connects :: Ord a => [AdjacencyMapPoc a] -> AdjacencyMapPoc a
+connects = foldr connect empty
+{-# NOINLINE connects #-}
 
 -- -- -- | The 'isSubgraphOf' function takes two graphs and returns 'True' if the
 -- -- -- first graph is a /subgraph/ of the second.
@@ -468,7 +469,7 @@ hasEdge u v g@(AM aim _ _) = Maybe.fromMaybe False $ index g u >>= (\a -> fmap (
 -- vertexCount x \< vertexCount y ==> x \< y
 -- @
 vertexCount :: AdjacencyMapPoc a -> Int
-vertexCount = IntMap.size . valueMap
+vertexCount = Map.size . indexMap
 
 -- -- -- | The number of edges in a graph.
 -- -- -- Complexity: /O(n)/ time.
@@ -738,30 +739,30 @@ removeEdge x y g = AM newGraph (valueMap g) (indexMap g)
         maybeIndexY = index g y
         newGraph    = Maybe.fromMaybe (graph g) (maybeIndexX >>= (\idX -> fmap (\idY -> AIM.removeEdge idX idY (graph g)) maybeIndexY))
 
--- -- -- | The function @'replaceVertex' x y@ replaces vertex @x@ with vertex @y@ in a
--- -- -- given 'AdjacencyMapPoc'. If @y@ already exists, @x@ and @y@ will be merged.
--- -- -- Complexity: /O((n + m) * log(n))/ time.
--- -- --
--- -- -- @
--- -- -- replaceVertex x x            == id
--- -- -- replaceVertex x y ('vertex' x) == 'vertex' y
--- -- -- replaceVertex x y            == 'mergeVertices' (== x) y
--- -- -- @
--- -- replaceVertex :: Ord a => a -> a -> AdjacencyMapPoc a -> AdjacencyMapPoc a
--- -- replaceVertex u v = gmap $ \w -> if w == u then v else w
+-- | The function @'replaceVertex' x y@ replaces vertex @x@ with vertex @y@ in a
+-- given 'AdjacencyMapPoc'. If @y@ already exists, @x@ and @y@ will be merged.
+-- Complexity: /O((n + m) * log(n))/ time.
+--
+-- @
+-- replaceVertex x x            == id
+-- replaceVertex x y ('vertex' x) == 'vertex' y
+-- replaceVertex x y            == 'mergeVertices' (== x) y
+-- @
+replaceVertex :: Ord a => a -> a -> AdjacencyMapPoc a -> AdjacencyMapPoc a
+replaceVertex u v = gmap $ \w -> if w == u then v else w
 
--- -- -- | Merge vertices satisfying a given predicate into a given vertex.
--- -- -- Complexity: /O((n + m) * log(n))/ time, assuming that the predicate takes
--- -- -- /O(1)/ to be evaluated.
--- -- --
--- -- -- @
--- -- -- mergeVertices ('const' False) x    == id
--- -- -- mergeVertices (== x) y           == 'replaceVertex' x y
--- -- -- mergeVertices 'even' 1 (0 * 2)     == 1 * 1
--- -- -- mergeVertices 'odd'  1 (3 + 4 * 5) == 4 * 1
--- -- -- @
--- -- mergeVertices :: Ord a => (a -> Bool) -> a -> AdjacencyMapPoc a -> AdjacencyMapPoc a
--- -- mergeVertices p v = gmap $ \u -> if p u then v else u
+-- | Merge vertices satisfying a given predicate into a given vertex.
+-- Complexity: /O((n + m) * log(n))/ time, assuming that the predicate takes
+-- /O(1)/ to be evaluated.
+--
+-- @
+-- mergeVertices ('const' False) x    == id
+-- mergeVertices (== x) y           == 'replaceVertex' x y
+-- mergeVertices 'even' 1 (0 * 2)     == 1 * 1
+-- mergeVertices 'odd'  1 (3 + 4 * 5) == 4 * 1
+-- @
+mergeVertices :: Ord a => (a -> Bool) -> a -> AdjacencyMapPoc a -> AdjacencyMapPoc a
+mergeVertices p v = gmap $ \u -> if p u then v else u
 
 -- -- -- | Transpose a given graph.
 -- -- -- Complexity: /O(m * log(n))/ time, /O(n + m)/ memory.
@@ -793,20 +794,30 @@ removeEdge x y g = AM newGraph (valueMap g) (indexMap g)
 -- -- "transpose/clique"   forall xs. transpose (clique xs)   = clique (reverse xs)
 -- --  #-}
 
--- -- -- | Transform a graph by applying a function to each of its vertices. This is
--- -- -- similar to @Functor@'s 'fmap' but can be used with non-fully-parametric
--- -- -- 'AdjacencyMapPoc'.
--- -- -- Complexity: /O((n + m) * log(n))/ time.
--- -- --
--- -- -- @
--- -- -- gmap f 'empty'      == 'empty'
--- -- -- gmap f ('vertex' x) == 'vertex' (f x)
--- -- -- gmap f ('edge' x y) == 'edge' (f x) (f y)
--- -- -- gmap 'id'           == 'id'
--- -- -- gmap f . gmap g   == gmap (f . g)
--- -- -- @
--- -- gmap :: (Ord a, Ord b) => (a -> b) -> AdjacencyMapPoc a -> AdjacencyMapPoc b
--- -- gmap f = AM . Map.map (Set.map f) . Map.mapKeysWith Set.union f . AdjacencyMapPoc
+-- | Transform a graph by applying a function to each of its vertices. This is
+-- similar to @Functor@'s 'fmap' but can be used with non-fully-parametric
+-- 'AdjacencyMapPoc'.
+-- Complexity: /O((n + m) * log(n))/ time.
+--
+-- @
+-- gmap f 'empty'      == 'empty'
+-- gmap f ('vertex' x) == 'vertex' (f x)
+-- gmap f ('edge' x y) == 'edge' (f x) (f y)
+-- gmap 'id'           == 'id'
+-- gmap f . gmap g   == gmap (f . g)
+-- @
+gmap :: Ord b => (a -> b) -> AdjacencyMapPoc a -> AdjacencyMapPoc b
+gmap f g = AM newGraph newValue newIndex
+    where
+        newValue = IntMap.map f (valueMap g) -- remove duplicated values
+        newIndex = Map.mapKeysWith min f (indexMap g)
+        -- todo: get rid of fromJust
+        newGraph = AIM.gmap (\a -> Maybe.fromJust $ value g a >>= (\idxA -> Map.lookup (f idxA) newIndex)) (graph g)
+
+-- gmap f (edge x y) == edge (f x) (f y)
+-- {_->0}
+-- 0
+-- 1
 
 -- -- -- | Construct the /induced subgraph/ of a given graph by removing the
 -- -- -- vertices that do not satisfy a given predicate.

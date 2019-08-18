@@ -32,6 +32,16 @@ t = fmap toIntAPI tPoly
 
 type AI = AdjacencyMapPoc Int
 
+
+testTransformations' :: TestsuiteInt g -> IO ()
+testTransformations' = mconcat [ testRemoveVertex
+                              , testRemoveEdge
+                              , testReplaceVertex
+                              , testMergeVertices
+                            --   , testTranspose
+                              , testGmap ]
+                            --   , testInduce ]
+
 testAdjacencyMapPoc :: IO ()
 testAdjacencyMapPoc = do
     putStrLn "\n============ AdjacencyMapPoc ============"
@@ -39,12 +49,13 @@ testAdjacencyMapPoc = do
 
     -- testConsistent        t
     -- testShow              t
-    -- testBasicPrimitives   t
+    testBasicPrimitives   t
     -- testFromAdjacencySets t
     -- testIsSubgraphOf      t
     -- testToGraph           t
     -- testGraphFamilies     t
     -- testTransformations   t
+    testTransformations' t
     -- testRelational        t
     -- testBox               tPoly
     -- testBfsForest         t
